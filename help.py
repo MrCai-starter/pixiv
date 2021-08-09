@@ -12,7 +12,7 @@ class Help:
 
     您可以输入:
     {Color.purple}>>> help [功能]{Color.end}
-    已查看某一功能的具体使用说明。
+    来查看某一功能的具体使用说明。
 
     例如您输入:
     >>> help id

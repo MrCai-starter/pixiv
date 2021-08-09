@@ -30,6 +30,8 @@ class Pixiv:
     # 排行榜可选的模式。
     rank_modes = ('day', 'week', 'month', 'male',
                   'female', 'original', 'rookie', 'manga')
+    # 功能汇总。
+    functions = ('id', 'member', 'rank', 'tag', 'help')
     # 实际拿到的插画数。
     supply = 0
     # 已下载的插画数。
@@ -156,12 +158,13 @@ class Pixiv:
                 else:
                     # 以字节形式读取响应。
                     content = await response.read()
-                    # 创建输出目录。
-                    if not os.path.exists(cls.output_dir):
-                        os.mkdir(cls.output_dir)
                     # 持久化存储。
-                    async with aiofiles.open(filepath, 'wb') as fw:
-                        await fw.write(content)
+                    try:
+                        async with aiofiles.open(filepath, 'wb') as fw:
+                            await fw.write(content)
+                    except FileNotFoundError:
+                        if not os.path.exists(cls.output_dir):
+                            os.mkdir(cls.output_dir)
         # 更新进度条。
         cls.downloaded += 1
         percent = cls.downloaded / cls.supply * 100
@@ -489,10 +492,10 @@ class Pixiv:
         :param args: 指令参数列表。
         """
         # 必须只能传1个参数。
-        try:
+        if len(args) == 1:
             cls.search_by_id(args[0])
         # 不是1个参数，就报错。
-        except:
+        else:
             cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
@@ -502,10 +505,10 @@ class Pixiv:
         :param args: 指令参数列表。
         """
         # 必须有2个参数，id、数量：
-        try:
+        if len(args) == 2:
             cls.search_by_member(args[0], args[1])
         # 不是2个参数，就报错。
-        except:
+        else:
             cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
@@ -539,7 +542,7 @@ class Pixiv:
         :param args: 指令参数列表。
         """
         # 参数至少需要2个：
-        try:
+        if len(args) >= 2:
             # 挑出最后2个检查，前面的全都看作标签。
             *tags, last_1, last_2 = args
             # 如果全是数字，说明一个是数量，一个是人气。
@@ -550,7 +553,7 @@ class Pixiv:
                 tags.append(last_1)
                 cls.search_by_tag(tags, last_2)
         # 如果不足2个，就报错。
-        except:
+        else:
             cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
@@ -559,34 +562,25 @@ class Pixiv:
 
         :param args: 指令参数列表。
         """
-        try:
+        if len(args) == 0:
+            print(Help.help_help)
+        elif len(args) == 1:
             print(eval(f'Help.help_{args[0]}'))
-        except:
+        else:
             cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
     def run_on_terminal(cls):
         """在终端运行程序。"""
         while True:
-            try:
-                command = input('>>> ').split()
-                if len(command) == 0:
-                    continue
-                elif command[0] == 'quit':
-                    break
-                else:
-                    eval(f'cls.parse_command_{command[0]}(command[1:])')
-                # elif command[0] == 'id':
-                #     cls.parse_command_id(command[1:])
-                # elif command[0] == 'member':
-                #     cls.parse_command_member(command[1:])
-                # elif command[0] == 'rank':
-                #     cls.parse_command_rank(command[1:])
-                # elif command[0] == 'tag':
-                #     cls.parse_command_tag(command[1:])
-                # elif command[0] == 'help':
-                #     cls.parse_command_help(command[-1])
-            except:
+            command = input('>>> ').split()
+            if len(command) == 0:
+                continue
+            elif command[0] == 'quit':
+                break
+            elif command[0] in cls.functions:
+                eval(f'cls.parse_command_{command[0]}(command[1:])')
+            else:
                 cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
         cls.quit()
