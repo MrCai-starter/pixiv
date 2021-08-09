@@ -3,18 +3,30 @@
 ---
 
 > 关于我，欢迎关注：
+<<<<<<< HEAD
 >
 > Github 主页：[MrCai-starter](https://github.com/MrCai-starter)
 >
 > 个人邮箱：1014305148@qq.com
 >
+=======
+> 
+> Github 主页：[MrCai-starter](https://github.com/MrCai-starter)
+> 
+> 个人邮箱：1014305148@qq.com
+> 
+>>>>>>> b0389356c752481bc0efc93bc3655495dd525615
 > 工作邮箱：yuwangcai@std.uestc.edu.cn
 
 ---
 
 ## 项目介绍
 
+<<<<<<< HEAD
 【无需梯子，异步下载】通过镜像网站[pixivel.moe](https://pixivel.moe/)对Pixiv的图片进行爬取和下载。
+=======
+通过镜像网站[pixivel.moe](https://pixivel.moe/)对Pixiv的图片进行爬取和下载。无需梯子，异步下载。
+>>>>>>> b0389356c752481bc0efc93bc3655495dd525615
 
 目前已实现四项爬取功能：
 
