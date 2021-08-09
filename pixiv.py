@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-# TODO 把标签搜索的高人气值转换成"users入り"标签
-# TODO 添加可视化界面。
 import asyncio
 import os
 import re
@@ -8,7 +6,7 @@ from datetime import datetime, timedelta
 
 import aiofiles
 import aiohttp
-import eprogress
+from eprogress import LineProgress
 import requests
 
 from color import Color
@@ -32,14 +30,12 @@ class Pixiv:
     # 排行榜可选的模式。
     rank_modes = ('day', 'week', 'month', 'male',
                   'female', 'original', 'rookie', 'manga')
-    # 标签搜索可选的模式。
-    search_modes = ('exact', 'partial')
     # 实际拿到的插画数。
     supply = 0
     # 已下载的插画数。
     downloaded = 0
     # 进度条实例。
-    bar = eprogress.LineProgress(total=100, title='Downloading')
+    bar = LineProgress(total=100, title='下载进度:')
 
     def __init__(self):
         """初始化应用。"""
@@ -50,7 +46,7 @@ class Pixiv:
         Pixiv.loop = asyncio.get_event_loop()
 
     @staticmethod
-    def hint(message: str, end='\n', flush=False):
+    def prompt(message: str, end='\n', flush=False):
         """用紫色字体在终端给出提示。
 
         :param message: 提示内容。
@@ -102,15 +98,15 @@ class Pixiv:
         if re.fullmatch('\d+', quantity):
             quantity = int(quantity)
         else:
-            cls.error('[Error] Illegal quantity.')
+            cls.error('[错误] 数量不合法哦!')
             return None, 0
         # 数量至少为1。
         if quantity < 1:
-            cls.error('[Error] Download at least 1 illustration.')
+            cls.error('[错误] 好歹得下个1幅罢(')
             return quantity, 0
         # 数量至多为100。
         if quantity > 100:
-            cls.error('[Error] Too many requests may damage the server.')
+            cls.error('[错误] 一次下载太多图片，有可能损坏别人的服务器的...')
             return quantity, 0
         # 确定爬取页面数。
         page_num = (quantity - 1) // 30 + 1
@@ -129,14 +125,13 @@ class Pixiv:
         :returns: 网站响应。
         """
         response = requests.get(url, headers=cls.headers, params=params)
-        # 响应失败：
+        # 响应失败则报错：
         if response.status_code != 200:
-            # 报错。
-            cls.error(f'''[Error] Request failed: {url}
-            Code: {response.status_code}''')
+            cls.error(f'''[错误] 对 {url} 的请求失败了!
+            状态码: {response.status_code}''')
             return None
+        # 响应成功则返回响应。
         else:
-            # 返回响应。
             return response
 
     @classmethod
@@ -155,70 +150,69 @@ class Pixiv:
                 # 响应失败：
                 if response.status != 200:
                     # 报错。
-                    cls.error(f'''[Error] Request failed: {url}
-                    Code: {response.status}''')
+                    cls.error(f'''[错误] 对 {url} 的请求失败了!
+                    状态码: {response.status}''')
                 # 响应成功：
                 else:
                     # 以字节形式读取响应。
                     content = await response.read()
+                    # 创建输出目录。
+                    if not os.path.exists(cls.output_dir):
+                        os.mkdir(cls.output_dir)
                     # 持久化存储。
-                    try:
-                        async with aiofiles.open(filepath, 'wb') as fw:
-                            await fw.write(content)
-                    except FileNotFoundError as e:
-                        cls.error(e)
-                        exit(-1)
+                    async with aiofiles.open(filepath, 'wb') as fw:
+                        await fw.write(content)
         # 更新进度条。
         cls.downloaded += 1
         percent = cls.downloaded / cls.supply * 100
         cls.bar.update(percent)
 
     @classmethod
-    def get_image_pair(cls, image: dict) -> list[tuple[str, str]]:
+    def get_image_pairs(cls, illust: dict) -> list[tuple[str, str]]:
         """解析插画下载链接。
 
         从存储插画数据的字典中，解析出每张分P的图片路径（可直接下载）。
 
-        :param img: 存储插画数据的字典。
+        :param illust: 存储插画数据的字典。
 
         :returns: 元组列表，每个二元元组由图片链接、存储路径组成。
         """
         # 如果插画字典为空，报错。
-        if len(image) == 0:
+        if len(illust) == 0:
             return []
         # 如果不可见，则报错。
-        if not image['visible']:
-            cls.warning('''[Warning] This image is currently invisble to you.
-            Maybe it's only open to the illustrator's friends.''')
+        if not illust['visible']:
+            cls.warning('[提示] 这幅插画对您不可见，也许只有画师的好友能看到?')
             return []
         # 解析插画 ID。
-        id = image['id']
+        id = illust['id']
         # 解析插画的标题。
-        title = image['title']
+        title = illust['title']
         # 去除题目中无法作为文件或文件夹名的字符。
         title = re.sub('[\|/:*?"<>]', ' ', title)
-        # 如果该插画只有1P，那么图片链接会存储在 "meta_single_page" 字典里。
-        if len(image['meta_single_page']) != 0:
+        # 如果该插画只有1P，那么图片链接会存储在"meta_single_page"字典里。
+        if illust['page_count'] == 1:
             # 拿到可直接下载的图片链接。
-            img_url = cls.to_local(
-                image['meta_single_page']['original_image_url'])
+            image_url = cls.to_local(
+                illust['meta_single_page']['original_image_url'])
             # 直接存储在输出目录下，图片名称为标题。
             filepath = os.path.join(cls.output_dir, f'{title}-{id}.png')
             # 保存至元组列表。
-            image_pairs = [(img_url, filepath)]
+            image_pairs = [(image_url, filepath)]
+        # 如果该插画不止1P，那么图片链接会存储在"meta_pages"字典里。
         else:
             # 拿到可直接下载的图片链接列表。
-            img_urls = [cls.to_local(page['image_urls']['original'])
-                        for page in image['meta_pages']]
+            image_urls = [cls.to_local(page['image_urls']['original'])
+                          for page in illust['meta_pages']]
             # 创建二级输出目录，目录名为标题。
             target_dir = os.path.join(cls.output_dir, f'{title}-{id}')
             if not os.path.exists(target_dir):
                 os.mkdir(target_dir)
             # 创建每张分P的存储路径列表，图片名称为分P序号。
             filepaths = [os.path.join(
-                target_dir, f'{str(index+1).zfill(3)}.png') for index in range(len(img_urls))]
+                target_dir, f'{str(index+1).zfill(3)}.png') for index in range(len(image_urls))]
             # 关联链接和路径。
-            image_pairs = list(zip(img_urls, filepaths))
+            image_pairs = list(zip(image_urls, filepaths))
         # 返回元组列表。
         return image_pairs
 
@@ -232,10 +226,10 @@ class Pixiv:
         """
         # 解析字典，拿到链接列表。
         image_pairs = [
-            pair for illust in illusts for pair in cls.get_image_pair(illust)]
-        # 如果传了一个空列表，就直接退出。
+            pair for illust in illusts for pair in cls.get_image_pairs(illust)]
+        # 如果一张图片都没有，就直接退出。
         if len(image_pairs) == 0:
-            cls.error('[Error] No image found.')
+            cls.error('[错误] 找不到这幅图哦!')
             return
         # 更新进度条。如果设为0，进度条不会更新，所以设成0.1。
         cls.bar.update(0.1)
@@ -257,7 +251,7 @@ class Pixiv:
         """
         # 验证 ID 合法性。
         if re.fullmatch('\d{1,10}', id) is None:
-            cls.error('[Error] Illegal id.')
+            cls.error('[错误] ID不合法哦!')
             return
         # 插画的数据在下面这个字典（一元）列表里。
         illusts = [cls.request(cls.api_url, params={
@@ -278,9 +272,9 @@ class Pixiv:
         """
         # 验证 ID 合法性。
         if re.fullmatch('\d{1,10}', id) is None:
-            cls.error('[Error] Illegal id.')
+            cls.error('[错误] ID不合法哦!')
             return
-        # 确定爬取页面数。
+        # 验证数量合法性，以及确定爬取页面数。
         quantity, page_num = cls.get_page_num(quantity)
         # 如果不需要爬，就提前退出。
         if page_num == 0:
@@ -292,11 +286,11 @@ class Pixiv:
         }).json().get('user', {})
         # 如果不存在该画师，报错。
         if illustrator == {}:
-            cls.error(f'[Error] No such illustrator [{id}].')
+            cls.error(f'[错误] 找不到[{id}]这位画师诶?')
             return
         # 获取画师名字。
         name = illustrator.get('name', 'Not found')
-        cls.hint(f'Name of illustrator: {name}')
+        cls.prompt(f'这位画师叫: {name}')
         # 每幅插画的数据将存储在下面这个字典列表里。
         illusts = []
         # 依次爬取每一页。
@@ -307,22 +301,21 @@ class Pixiv:
                 'id': id,
                 'page': page
             }).json().get('illusts', [])
-            # 获取当前页插画数。
-            cur_page_len = len(cur_page_illusts)
             # 如果该页没有插画，说明接下来也不会有了。
-            if cur_page_len == 0:
+            if len(cur_page_illusts) == 0:
                 break
             # 确定想要从这一页下载几幅插画。
             # - 需求还剩几张？
             # - 该页还剩几张？
             # 从这两个数中选最小的。
-            desire_len = min(quantity - page * cls.page_quantity, cur_page_len)
+            desire_len = min(quantity - page *
+                             cls.page_quantity, len(cur_page_illusts))
             # 将对应数量的插画加入列表。
             illusts.extend(cur_page_illusts[:desire_len])
-        # 如果插画数量不达标，给出警告。
+        # 如果拿到了，但是插画数量不达标，给出警告。
         if 0 < len(illusts) < quantity:
             cls.warning(
-                f'[Warning] We only found {len(illusts)} illustration(s).')
+                f'[提示] 我只找到了{len(illusts)}幅插画...')
         # 调用存储函数。
         cls.save(illusts)
 
@@ -345,7 +338,7 @@ class Pixiv:
         """
         # 判断模式是否合法。
         if mode not in cls.rank_modes:
-            cls.error('[Error] Illegal mode.')
+            cls.error('[错误] 模式不合法哦!')
             return
         # 修正模式。
         if mode in ('male', 'female', 'manga'):
@@ -357,37 +350,41 @@ class Pixiv:
         # 如果不需要爬，就提前退出。
         if page_num == 0:
             return
-        # 指定日期。
-        date = (datetime.now() - timedelta(days=2)).strftime("%F")
         # 将每幅插画的字典放入列表。
         illusts = []
-        # 对每页发起请求。
-        for page in range(page_num):
-            # 拿到该页所有插画的列表。
-            cur_page_illusts = cls.request(cls.api_url, params={
-                'type': 'rank',
-                'page': page,
-                'mode': mode,
-                'date': date
-            }).json().get('illusts', [])
-            # 该页插画数量。
-            cur_page_len = len(cur_page_illusts)
-            # 如果该页没有插画，说明接下来也不会有了。
-            if cur_page_len == 0:
+        for day_delta in range(3):
+            # 指定日期。
+            date = (datetime.now() - timedelta(days=day_delta)).strftime("%F")
+            # 对每页发起请求。
+            for page in range(page_num):
+                # 拿到该页所有插画的列表。
+                cur_page_illusts = cls.request(cls.api_url, params={
+                    'type': 'rank',
+                    'page': page,
+                    'mode': mode,
+                    'date': date
+                }).json().get('illusts', [])
+                # 该页插画数量。
+                cur_page_len = len(cur_page_illusts)
+                # 如果该页没有插画，说明接下来也不会有了。
+                if cur_page_len == 0:
+                    break
+                # 确定想要从这一页下载几幅插画。
+                # - 需求还剩几张？
+                # - 该页还剩几张？
+                # 从这两个数中选最小的。
+                desire_len = min(
+                    quantity - page*cls.page_quantity, cur_page_len)
+                # 将对应数量的插画加入列表。
+                illusts.extend(cur_page_illusts[:desire_len])
+            # 如果拿到了，就不用继续循环了。
+            if len(illusts) != 0:
                 break
-            # 确定想要从这一页下载几幅插画。
-            # - 需求还剩几张？
-            # - 该页还剩几张？
-            # 从这两个数中选最小的。
-            desire_len = min(
-                quantity - page*cls.page_quantity, cur_page_len)
-            # 将对应数量的插画加入列表。
-            illusts.extend(cur_page_illusts[:desire_len])
         # 调用存储函数。
         cls.save(illusts)
 
     @classmethod
-    def search_by_tags(cls, tags: list, quantity: str, popularity: int = 0):
+    def search_by_tag(cls, tags: list, quantity: str, popularity: int = 0):
         """按标签下载。
 
         搜索指定的多个标签、指定数量、指定人气的插画。
@@ -396,20 +393,51 @@ class Pixiv:
         :param quantity: 需求数量，区间为[1, 100]。
         :param popularity: 人气最低值，默认为0。
         """
-        # 修正标签。
-        tags = ' '.join(tags)
         # 检验数量合法性。
         quantity, _ = cls.get_page_num(quantity)
         if _ == 0:
             return
-        # 依次向各页发送请求，寻找人气高于指定值的插画链接，直到达到指定数量。
+        # 检查是否需要 R-18 图片。
+        is_r18 = True if 'R-18' in tags else False
+        # 修正标签。
+        tags = ' '.join(tags)
+        # 用"users入り"方法先找一遍。
+        illusts = cls.get_illusts_by_tags(
+            f'{tags} {popularity}users入り', quantity, is_r18=is_r18, is_traverse=False)
+        # 如果没拿到，就转用遍历法搜索。
+        if len(illusts) == 0:
+            illusts = cls.get_illusts_by_tags(
+                tags, quantity, is_r18=is_r18, is_traverse=True, popularity=popularity)
+        # 如果拿到了，但是插画数不足，就给出警告。
+        if 0 < len(illusts) < quantity:
+            cls.warning(
+                f'\r[提示] 我只找到了{len(illusts)}幅插画...')
+        # 调用存储函数。
+        cls.save(illusts)
+
+    @classmethod
+    def get_illusts_by_tags(cls, tags: str, quantity: int, is_r18: bool, is_traverse: bool, popularity: int = 0) -> list[dict]:
+        """为按标签搜索的函数找到插画列表。
+
+        搜索指定的多个标签、指定数量、指定人气的插画。
+
+        :param tags: 标签字符串。
+        :param quantity: 需求数量，区间为[1, 100]。
+        :param is_r18: 是否需要 R-18 图片。
+        :param is_traverse: 是否按照遍历法搜索。
+        :param popularity: 人气最低值，默认为0。
+
+        :returns: 插画字典列表。
+        """
+        # 存储插画字典的列表。
         illusts = []
+        # 依次向各页发送请求，寻找人气高于指定值的插画链接，直到达到指定数量。
         at_hand = 0
         cur_page = 0
         quit = False
         while not quit:
-            cls.hint(
-                f'\r[Hint] Searching page {cur_page}.', end='', flush=True)
+            cls.prompt(
+                f'\r正在第{cur_page}页里查找...', end='', flush=True)
             # 该页所有插画的列表。
             cur_page_illusts = cls.request(cls.api_url, params={
                 'type': 'search',
@@ -420,33 +448,32 @@ class Pixiv:
             # 如果当前页的插画数已不足需求，就提前退出。
             if len(cur_page_illusts) < min(quantity - at_hand, cls.page_quantity):
                 quit = True
-                print('')
             # 检查每幅插画的人气。
             for illust in cur_page_illusts:
-                # 如果超过指定值，就将插画加入列表。
-                if illust['total_bookmarks'] >= popularity:
-                    illusts.append(illust)
-                    at_hand += 1
+                # 如果 R-18 与需求不一致，就检查下一幅。
+                if ('R-18' in [tags['name'] for tags in illust['tags']]) ^ is_r18:
+                    continue
+                # 如果我需要一张张检查人气，并且人气不达标，也检查下一幅。
+                if is_traverse and (illust['total_bookmarks'] < popularity):
+                    continue
+                # 如果与需求一致，就加入列表。
+                illusts.append(illust)
+                at_hand += 1
                 # 如果数量达标，就退出循环。
                 if at_hand == quantity:
                     quit = True
-                    print('')
                     break
             # 进入下一页。
             cur_page += 1
-        # 如果最终拿到的插画数不足，就给出警告。
-        if 0 < len(illusts) < quantity:
-            cls.warning(
-                f'[Warning] Only found {at_hand} illustration(s).')
-        # 调用存储函数。
-        cls.save(illusts)
+        # 返回插画列表。
+        return illusts
 
     @classmethod
     def clear(cls):
         """清空与进度条相关的变量，准备下一轮。"""
         cls.supply = 0
         cls.downloaded = 0
-        # 换行。
+        # 从进度条处换行。
         print('')
 
     @classmethod
@@ -456,17 +483,30 @@ class Pixiv:
         cls.loop.close()
 
     @classmethod
+    def parse_command_id(cls, args: list):
+        """解析按插画 ID 搜索的指令。
+
+        :param args: 指令参数列表。
+        """
+        # 必须只能传1个参数。
+        try:
+            cls.search_by_id(args[0])
+        # 不是1个参数，就报错。
+        except:
+            cls.error('[错误] 指令不对哦!要不再看一眼help?')
+
+    @classmethod
     def parse_command_member(cls, args: list):
-        """解析按成员搜索的指令。
+        """解析按画师 ID 搜索的指令。
 
         :param args: 指令参数列表。
         """
         # 必须有2个参数，id、数量：
-        if len(args) == 2:
+        try:
             cls.search_by_member(args[0], args[1])
         # 不是2个参数，就报错。
-        else:
-            cls.error('[Error] Illegal command.')
+        except:
+            cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
     def parse_command_rank(cls, args: list):
@@ -490,56 +530,64 @@ class Pixiv:
         elif len(args) == 2:
             cls.search_by_rank(mode=args[0], quantity=args[1])
         else:
-            cls.error('[Error] Illegal command.')
+            cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
-    def parse_command_tags(cls, args: list):
+    def parse_command_tag(cls, args: list):
         """解析按标签搜索的指令。
 
         :param args: 指令参数列表。
         """
         # 参数至少需要2个：
-        if len(args) >= 2:
+        try:
             # 挑出最后2个检查，前面的全都看作标签。
             *tags, last_1, last_2 = args
             # 如果全是数字，说明一个是数量，一个是人气。
             if re.fullmatch('\d+', f'{last_1}{last_2}'):
-                cls.search_by_tags(tags, last_1, popularity=int(last_2))
+                cls.search_by_tag(tags, last_1, popularity=int(last_2))
             # 如果不全是数字，说明未指定人气，可推出倒数第2个也是标签，最后1个是数量。
             else:
                 tags.append(last_1)
-                cls.search_by_tags(tags, last_2)
+                cls.search_by_tag(tags, last_2)
         # 如果不足2个，就报错。
-        else:
-            cls.error('[Error] Illegal command.')
+        except:
+            cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
-    def parse_command_help(cls, arg):
+    def parse_command_help(cls, args: list):
+        """解析帮助的指令。
+
+        :param args: 指令参数列表。
+        """
         try:
-            print(eval(f'Help.help_{arg}'))
+            print(eval(f'Help.help_{args[0]}'))
         except:
-            cls.error('[Error] Illegal command.')
+            cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
     @classmethod
     def run_on_terminal(cls):
-        """在终端运行程序。
-        """
+        """在终端运行程序。"""
         while True:
-            command = input('>>> ').split()
-            if command[0] == 'id':
-                cls.search_by_id(command[-1])
-            elif command[0] == 'member':
-                cls.parse_command_member(command[1:])
-            elif command[0] == 'rank':
-                cls.parse_command_rank(command[1:])
-            elif command[0] == 'tag':
-                cls.parse_command_tags(command[1:])
-            elif command[0] == 'help':
-                cls.parse_command_help(command[-1])
-            elif command[0] == 'quit':
-                break
-            else:
-                cls.error('[Error] Illegal command.')
+            try:
+                command = input('>>> ').split()
+                if len(command) == 0:
+                    continue
+                elif command[0] == 'quit':
+                    break
+                else:
+                    eval(f'cls.parse_command_{command[0]}(command[1:])')
+                # elif command[0] == 'id':
+                #     cls.parse_command_id(command[1:])
+                # elif command[0] == 'member':
+                #     cls.parse_command_member(command[1:])
+                # elif command[0] == 'rank':
+                #     cls.parse_command_rank(command[1:])
+                # elif command[0] == 'tag':
+                #     cls.parse_command_tag(command[1:])
+                # elif command[0] == 'help':
+                #     cls.parse_command_help(command[-1])
+            except:
+                cls.error('[错误] 指令不对哦!要不再看一眼help?')
 
         cls.quit()
 
