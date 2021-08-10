@@ -14,7 +14,7 @@
 
 ## 项目介绍
 
-【无需梯子，异步下载】通过镜像网站[pixivel.moe](https://pixivel.moe/)对Pixiv的图片进行爬取和下载。
+通过镜像网站[pixivel.moe](https://pixivel.moe/)对Pixiv的图片进行爬取和下载。无需梯子，异步下载。
 
 目前已实现四项爬取功能：
 
